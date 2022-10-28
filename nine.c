@@ -91,7 +91,7 @@ syscreate(char *name, int mode, int perm)
 {
 	if (debug)
 		fprintf(stderr, "create %s %#x %#o", name, mode, perm);
-	return opencreate(name, mode, perm, O_CREAT);
+	return opencreate(name, mode, perm & 0777, O_CREAT);
 }
 
 static int
