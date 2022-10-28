@@ -205,14 +205,15 @@ int
 findlibc(struct dl_phdr_info *info, size_t size, void *ptr)
 {
 	const Elf64_Phdr *p;
-	uintptr_t offset, length;
+	uintptr_t offset, length, libc;
 
+	libc = (uintptr_t)read;  /* arbitrary function used to identify libc text segment */
 	for (p = info->dlpi_phdr; p < info->dlpi_phdr + info->dlpi_phnum; ++p) {
 		if (p->p_type != PT_LOAD || !(p->p_flags & PF_X))
 			continue;
 		offset = info->dlpi_addr + p->p_vaddr;
 		length = p->p_memsz;
-		if (offset < (uintptr_t)read && (uintptr_t)read - offset < length) {
+		if (offset < libc && libc - offset < length) {
 			if (debug)
 				fprintf(stderr, "found libc at [%"PRIxPTR"-%"PRIxPTR"]\n", offset, offset + length);
 			if (prctl(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_ON, offset, length, &intercept) != 0) {
