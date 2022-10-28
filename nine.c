@@ -82,7 +82,7 @@ static int
 sysopen(char *name, int mode)
 {
 	if (debug)
-		fprintf(stderr, "open %s %d", name, mode);
+		fprintf(stderr, "open %s %#x", name, mode);
 	return opencreate(name, mode, 0, 0);
 }
 
@@ -90,7 +90,7 @@ static int
 syscreate(char *name, int mode, int perm)
 {
 	if (debug)
-		fprintf(stderr, "create %s %d %d", name, mode, perm);
+		fprintf(stderr, "create %s %#x %#o", name, mode, perm);
 	return opencreate(name, mode, perm, O_CREAT);
 }
 
