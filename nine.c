@@ -114,6 +114,27 @@ sysbrk_(char *addr)
 }
 
 static int
+sysremove(char *name)
+{
+	if (debug)
+		fprintf(stderr, "remove %s", name);
+	return seterr(unlink(name));
+}
+
+static long long
+sysseek(long long *ret, int fd, long long off, int type)
+{
+	if (debug)
+		fprintf(stderr, "seek %d %lld %d", fd, off, type);
+	switch (type) {
+	case 0: type = SEEK_SET; break;
+	case 1: type = SEEK_CUR; break;
+	case 2: type = SEEK_END; break;
+	}
+	return seterr((*ret = lseek(fd, off, type)));
+}
+
+static int
 syserrstr(char *buf, unsigned len)
 {
 	char tmp[ERRMAX];
@@ -184,6 +205,8 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
 	case CREATE: ret = syscreate((char *)sp[1], (int)sp[2], (int)sp[3]); break;
 	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
+	case REMOVE: ret = sysremove((char *)sp[1]); break;
+	case SEEK:   ret = sysseek((long long *)sp[1], (int)sp[2], sp[3], (int)sp[4]); break;
 	case ERRSTR: ret = syserrstr((char *)sp[1], (unsigned)sp[2]); break;
 	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case FWSTAT: ret = sysfwstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
