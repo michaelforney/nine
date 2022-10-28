@@ -180,9 +180,9 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	switch (sc) {
 	case EXITS:  ret = sysexits((char *)sp[1]); break;
 	case CLOSE:  ret = sysclose((int)sp[1]); break;
-	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[1]); break;
+	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
-	case CREATE: ret = syscreate((char *)sp[1], (int)sp[1], (int)sp[2]); break;
+	case CREATE: ret = syscreate((char *)sp[1], (int)sp[2], (int)sp[3]); break;
 	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
 	case ERRSTR: ret = syserrstr((char *)sp[1], (unsigned)sp[2]); break;
 	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
