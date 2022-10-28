@@ -6,11 +6,24 @@ LDFLAGS+=-pie
 
 -include config.mk
 
-nine: start.s
+OBJ=\
+	nine.o\
+	start.o\
+
+HDR=\
+	arg.h\
+	sys.h\
+	tos.h\
+	util.h\
 
 .PHONY: all
 all: nine
 
+$(OBJ): $(HDR)
+
+nine: nine.o start.o
+	$(CC) $(LDFLAGS) -o $@ $(OBJ)
+
 .PHONY: clean
 clean:
-	rm -f nine
+	rm -f nine $(OBJ)
