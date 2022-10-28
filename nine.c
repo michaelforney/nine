@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
@@ -187,12 +188,19 @@ convD2M(struct stat *st, char *name, size_t namelen, unsigned char *edir, unsign
 }
 
 static int
-sysexits(char *status)
+syschdir(char *name)
 {
 	if (debug)
-		fprintf(stderr, "exits %s\n", status ? status : "nil");
-	exit(status && *status);
-	return 0;
+		fprintf(stderr, "chdir %s", name);
+	return seterr(chdir(name));
+}
+
+static int
+sysdup(int fd)
+{
+	if (debug)
+		fprintf(stderr, "dup %d", fd);
+	return seterr(dup(fd));
 }
 
 static int
@@ -201,6 +209,15 @@ sysclose(int fd)
 	if (debug)
 		fprintf(stderr, "close %d", fd);
 	return seterr(close(fd));
+}
+
+static int
+sysexits(char *status)
+{
+	if (debug)
+		fprintf(stderr, "exits %s\n", status ? status : "nil");
+	exit(status && *status);
+	return 0;
 }
 
 static int
@@ -225,6 +242,18 @@ sysopen(char *name, int mode)
 	if (debug)
 		fprintf(stderr, "open %s %#x", name, mode);
 	return opencreate(name, mode, 0, 0);
+}
+
+static int
+syssleep(int msec)
+{
+	struct timespec ts;
+
+	if (debug)
+		fprintf(stderr, "sleep %d", msec);
+	ts.tv_sec = msec / 1000;
+	ts.tv_nsec = msec % 1000 * 1000000;
+	return seterr(nanosleep(&ts, NULL));
 }
 
 static int
@@ -381,9 +410,13 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	sc = greg[REG_RBP];
 	sp = (long long *)greg[REG_RSP];
 	switch (sc) {
+	case _ERRSTR: ret = syserrstr((char *)sp[1], 64); break;
+	case CHDIR:  ret = syschdir((char *)sp[1]); break;
 	case EXITS:  ret = sysexits((char *)sp[1]); break;
 	case CLOSE:  ret = sysclose((int)sp[1]); break;
+	case DUP:    ret = sysdup((int)sp[1]); break;
 	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
+	case SLEEP:  ret = syssleep((int)sp[1]); break;
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
 	case CREATE: ret = syscreate((char *)sp[1], (int)sp[2], (int)sp[3]); break;
 	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
