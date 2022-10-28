@@ -1,23 +1,22 @@
 .text
 .globl start
 start:
-	mov %rdi, %rbx /* entry */
-	mov %rsi, %rax /* argc */
-	mov %rdx, %r8  /* argv */
-	mov %rcx, %r9  /* _tos */
+	mov %rdi, %rbp /* entry */
+	mov %rsi, %rax /* _tos */
+	mov %rdx, %rbx /* argc */
+	mov %rcx, %rsi /* argv */
 
 	/* push argv onto stack */
-	mov %r8, %rcx
+	mov %rbx, %rcx
 	add $1, %rcx
 	sal $3, %rcx
 	sub %rcx, %rsp
 	mov %rsp, %rdi
-	mov %r9, %rsi
 	rep movsb
 
 	/* push argc onto stack */
-	push %r8
+	push %rbx
 
-	jmp *%rbx
+	jmp *%rbp
 
 .section .note.GNU-stack,"",@progbits
