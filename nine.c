@@ -1,14 +1,18 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <grp.h>
+#include <pwd.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <elf.h>
 #include <link.h>
 #include <sys/prctl.h>
@@ -20,6 +24,17 @@
 #ifndef O_EXEC
 #define O_EXEC O_PATH
 #endif
+
+/* bits in Qid.type */
+#define QTDIR		0x80		/* type bit for directories */
+#define QTAPPEND	0x40		/* type bit for append only files */
+#define QTEXCL		0x20		/* type bit for exclusive use files */
+#define QTMOUNT		0x10		/* type bit for mounted channel */
+#define QTAUTH		0x08		/* type bit for authentication file */
+#define QTTMP		0x04		/* type bit for not-backed-up file */
+#define QTFILE		0x00		/* plain file */
+
+#define STATFIXLEN
 
 #define ALIGN(v, a) (((v) + (a) - 1) & ~((a) - 1))
 #define ERRMAX 128
@@ -43,6 +58,132 @@ seterr(long long ret)
 	if (ret < 0)
 		truncstrcpy(errstr, strerror(errno), sizeof errstr);
 	return ret;
+}
+
+static char *
+uidtoname(uid_t uid)
+{
+	struct uidmap {
+		uid_t uid;
+		char *name;
+	};
+	static struct uidmap *map;
+	static size_t len;
+	static char buf[(sizeof(uid_t) * CHAR_BIT + 2) / 3 + 1], *name;
+	struct uidmap *m;
+	struct passwd *pw;
+	size_t i;
+
+	for (i = 0; i < len; ++i) {
+		if (map[i].uid == uid)
+			return map[i].name;
+	}
+	errno = 0;
+	pw = getpwuid(uid);
+	if (!pw) {
+		if (errno)
+			return NULL;
+		snprintf(buf, sizeof buf, "%ju", (uintmax_t)uid);
+		return buf;
+	}
+	name = strdup(pw->pw_name);
+	if (!name)
+		return NULL;
+	if ((len & (len - 1)) == 0 && len - 1u >= 31) {
+		m = realloc(map, (len ? len * 2 : 32) * sizeof *m);
+		if (!m)
+			return NULL;
+		map = m;
+	}
+	m = &map[len++];
+	m->uid = uid;
+	m->name = name;
+	return name;
+}
+
+static char *
+gidtoname(gid_t gid)
+{
+	struct gidmap {
+		gid_t gid;
+		char *name;
+	};
+	static struct gidmap *map;
+	static size_t len;
+	static char buf[(sizeof(gid_t) * CHAR_BIT + 2) / 3 + 1], *name;
+	struct gidmap *m;
+	struct group *gr;
+	size_t i;
+
+	for (i = 0; i < len; ++i) {
+		if (map[i].gid == gid)
+			return map[i].name;
+	}
+	errno = 0;
+	gr = getgrgid(gid);
+	if (!gr) {
+		if (errno)
+			return NULL;
+		snprintf(buf, sizeof buf, "%ju", (uintmax_t)gid);
+		return buf;
+	}
+	name = strdup(gr->gr_name);
+	if (!name)
+		return NULL;
+	if ((len & (len - 1)) == 0 && len - 1u >= 31) {
+		m = realloc(map, (len ? len * 2 : 32) * sizeof *m);
+		if (!m)
+			return NULL;
+		map = m;
+	}
+	m = &map[len++];
+	m->gid = gid;
+	m->name = name;
+	return name;
+}
+
+static int
+convD2M(struct stat *st, char *name, size_t namelen, unsigned char *edir, unsigned nedir)
+{
+	unsigned char *b;
+	char *uid, *gid;
+	size_t uidlen, gidlen;
+	int qidtype;
+
+	switch (st->st_mode & S_IFMT) {
+	case S_IFDIR: qidtype = QTDIR; break;
+	default:      qidtype = 0;     break;
+	}
+	if (nedir < 2)
+		return 0;
+	uid = uidtoname(st->st_uid);
+	gid = gidtoname(st->st_gid);
+	if (!uid || !gid)
+		return 0;
+	uidlen = strlen(uid);
+	gidlen = strlen(gid);
+	b = edir;
+	b = putle16(b, STATFIXLEN + namelen + uidlen + gidlen);
+	if (nedir < STATFIXLEN + namelen + uidlen + gidlen)
+		return 2;
+	b = putle16(b, 'U');
+	b = putle32(b, st->st_dev);
+	b = putle8(b, qidtype);
+	b = putle32(b, 0);
+	b = putle64(b, st->st_ino);
+	b = putle32(b, st->st_mode & 0777);
+	b = putle32(b, st->st_atime);
+	b = putle32(b, st->st_mtime);
+	b = putle64(b, st->st_size);
+	b = putle16(b, namelen);
+	memcpy(b, name, namelen), b += namelen;
+	b = putle16(b, uidlen);
+	memcpy(b, uid, uidlen), b += uidlen;
+	b = putle16(b, gidlen);
+	memcpy(b, gid, gidlen), b += gidlen;
+	b = putle16(b, 0);
+	putle16(edir, b - edir);
+	return b - edir;
 }
 
 static int
@@ -150,6 +291,47 @@ syserrstr(char *buf, unsigned len)
 }
 
 static int
+sysstat(char *name, unsigned char *edir, unsigned nedir)
+{
+	struct stat st;
+	int ret;
+
+	if (debug)
+		fprintf(stderr, "stat %s %p %u", name, (void *)edir, nedir);
+	if (seterr(stat(name, &st)) != 0)
+		return 0;
+	ret = convD2M(&st, name, strlen(name), edir, nedir);
+	if (ret == 0)
+		seterr(-1);
+	return ret;
+}
+
+static int
+sysfstat(int fd, unsigned char *edir, unsigned nedir)
+{
+	struct stat st;
+	int ret;
+	char procfd[sizeof "/proc/self/fd/" + (sizeof(int) * CHAR_BIT + 2) / 3];
+	char name[PATH_MAX];
+	ssize_t namelen;
+
+	if (debug)
+		fprintf(stderr, "fstat %d %p %u", fd, (void *)edir, nedir);
+	if (seterr(fstat(fd, &st)) != 0)
+		return 0;
+	snprintf(procfd, sizeof procfd, "/proc/self/fd/%d", fd);
+	namelen = readlink(procfd, name, sizeof name - 1);
+	if (namelen < 0) {
+		seterr(-1);
+		return 0;
+	}
+	ret = convD2M(&st, name, namelen, edir, nedir);
+	if (ret == 0)
+		seterr(-1);
+	return ret;
+}
+
+static int
 syswstat(char *name, unsigned char *edir, unsigned nedir)
 {
 	if (debug)
@@ -208,6 +390,8 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case REMOVE: ret = sysremove((char *)sp[1]); break;
 	case SEEK:   ret = sysseek((long long *)sp[1], (int)sp[2], sp[3], (int)sp[4]); break;
 	case ERRSTR: ret = syserrstr((char *)sp[1], (unsigned)sp[2]); break;
+	case STAT:   ret = sysstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
+	case FSTAT:  ret = sysfstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case FWSTAT: ret = sysfwstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case PREAD:  ret = syspread((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
