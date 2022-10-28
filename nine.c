@@ -25,9 +25,9 @@
 #define ERRMAX 128
 
 static char intercept = SYSCALL_DISPATCH_FILTER_ALLOW;
-static unsigned char *data;
+static char *data;
 static size_t datasize;
-static char errstr[ERRMAX], errtmp[ERRMAX];
+static char errstr[ERRMAX];
 static int debug;
 
 static void
@@ -37,15 +37,139 @@ truncstrcpy(char *dst, const char *src, size_t len)
 		dst[len - 1] = '\0';
 }
 
+static long long
+seterr(long long ret)
+{
+	if (ret < 0)
+		truncstrcpy(errstr, strerror(errno), sizeof errstr);
+	return ret;
+}
+
+static int
+sysexits(char *status)
+{
+	if (debug)
+		fprintf(stderr, "exits %s\n", status ? status : "nil");
+	exit(status && *status);
+	return 0;
+}
+
+static int
+sysclose(int fd)
+{
+	if (debug)
+		fprintf(stderr, "close %d", fd);
+	return seterr(close(fd));
+}
+
+static int
+opencreate(char *name, int mode, int perm, int flag)
+{
+	switch (mode & 3) {
+	case 0: flag |= O_RDONLY; break;
+	case 1: flag |= O_WRONLY; break;
+	case 2: flag |= O_RDWR; break;
+	case 3: flag |= O_EXEC; break;
+	}
+	if (mode & 16)
+		flag |= O_TRUNC;
+	if (mode & 32)
+		flag |= O_CLOEXEC;
+	return seterr(open(name, flag, perm));
+}
+
+static int
+sysopen(char *name, int mode)
+{
+	if (debug)
+		fprintf(stderr, "open %s %d", name, mode);
+	return opencreate(name, mode, 0, 0);
+}
+
+static int
+syscreate(char *name, int mode, int perm)
+{
+	if (debug)
+		fprintf(stderr, "create %s %d %d", name, mode, perm);
+	return opencreate(name, mode, perm, O_CREAT);
+}
+
+static int
+syspipe(int fd[2])
+{
+	if (debug)
+		fprintf(stderr, "pipe %p", (void *)fd);
+	return seterr(socketpair(AF_UNIX, SOCK_STREAM, 0, fd));
+}
+
+static int
+sysbrk_(char *addr)
+{
+	if (debug)
+		fprintf(stderr, "brk_ %p", addr);
+	if (mremap(data, datasize, addr - data, 0) == MAP_FAILED)
+		return seterr(-1);
+	datasize = addr - data;
+	return 0;
+}
+
+static int
+syserrstr(char *buf, unsigned len)
+{
+	char tmp[ERRMAX];
+
+	if (debug)
+		fprintf(stderr, "errstr %.*s %d", (int)len, buf, len);
+	if (len > sizeof errstr)
+		len = sizeof errstr;
+	truncstrcpy(tmp, buf, len);
+	truncstrcpy(buf, errstr, len);
+	truncstrcpy(errstr, tmp, len);
+	return 0;
+}
+
+static int
+syswstat(char *name, unsigned char *edir, unsigned nedir)
+{
+	if (debug)
+		fprintf(stderr, "wstat %s %p %u", name, (void *)edir, nedir);
+	strcpy(errstr, "not implemented");
+	return -1;
+}
+
+static int
+sysfwstat(int fd, unsigned char *edir, unsigned nedir)
+{
+	if (debug)
+		fprintf(stderr, "fwstat %d %p %u", fd, (void *)edir, nedir);
+	strcpy(errstr, "not implemented");
+	return -1;
+}
+
+static long long
+syspread(int fd, void *buf, int len, long long off)
+{
+	if (debug)
+		fprintf(stderr, "pread %d %p %d %lld", fd, buf, len, off);
+	return seterr(off == -1 ? read(fd, buf, len) : pread(fd, buf, len, off));
+}
+
+static long long
+syspwrite(int fd, void *buf, int len, long long off)
+{
+	if (debug)
+		fprintf(stderr, "pwrite %d %p %d %lld", fd, buf, len, off);
+	return seterr(off == -1 ? write(fd, buf, len) : pwrite(fd, buf, len, off));
+}
+
 static void
 sigsys(int sig, siginfo_t *info, void *ptr)
 {
 	ucontext_t *uctx;
 	mcontext_t *mctx;
 	greg_t *greg;
-	int sc, flag;
-	unsigned mode;
-	long long *sp, n;
+	int sc;
+	long long *sp;
 	long ret;
 
 	uctx = ptr;
@@ -54,103 +178,17 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	sc = greg[REG_RBP];
 	sp = (long long *)greg[REG_RSP];
 	switch (sc) {
-	case EXITS:
-		if (debug)
-			fprintf(stderr, "exits %s\n", sp[1] ? (char *)sp[1] : "nil");
-		exit(sp[1] && *(char *)sp[1] != 0);
-		break;
-	case CLOSE:
-		if (debug)
-			fprintf(stderr, "close %d", (int)sp[1]);
-		ret = close((int)sp[1]);
-		if (ret < 0)
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		break;
-	case OPEN:
-		if (debug)
-			fprintf(stderr, "open %s %d", (char *)sp[1], (int)sp[2]);
-		flag = 0;
-		mode = 0;
-	open:
-		switch (sp[2] & 3) {
-		case 0: flag |= O_RDONLY; break;
-		case 1: flag |= O_WRONLY; break;
-		case 2: flag |= O_RDWR; break;
-		case 3: flag |= O_EXEC; break;
-		}
-		if (sp[2] & 16)
-			flag |= O_TRUNC;
-		if (sp[2] & 32)
-			flag |= O_CLOEXEC;
-		ret = open((char *)sp[1], flag, mode);
-		if (ret < 0)
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		break;
-	case PIPE:
-		if (debug)
-			fprintf(stderr, "pipe %p", (void *)sp[1]);
-		ret = socketpair(AF_UNIX, SOCK_STREAM, 0, (int *)sp[1]);
-		if (ret < 0)
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		break;
-	case CREATE:
-		if (debug)
-			fprintf(stderr, "create %s %d %u", (char *)sp[1], (int)sp[2], (unsigned)sp[3]);
-		flag = O_CREAT;
-		mode = (unsigned)sp[3];
-		goto open;
-	case BRK_:
-		if (debug)
-			fprintf(stderr, "brk_ %p", (void *)sp[1]);
-		ret = 0;
-		if (mremap(data, datasize, (char *)sp[1] - (char *)data, 0) == MAP_FAILED) {
-			ret = -1;
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		} else {
-			datasize = (char *)sp[1] - (char *)data;
-		}
-		break;
-	case ERRSTR:
-		if (debug)
-			fprintf(stderr, "errstr %s", (char *)sp[1]);
-		n = sp[2];
-		if (n > sizeof errstr)
-			n = sizeof errstr;
-		truncstrcpy(errtmp, (char *)sp[1], n);
-		truncstrcpy((char *)sp[1], errstr, n);
-		truncstrcpy(errstr, errtmp, n);
-		ret = 0;
-		break;
-	case WSTAT:
-		if (debug)
-			fprintf(stderr, "wstat %s %p %d", (char *)sp[1], (void *)sp[2], (int)sp[3]);
-		strcpy(errstr, "not implemented");
-		ret = -1;
-		break;
-	case FWSTAT:
-		if (debug)
-			fprintf(stderr, "fwstat %d %p %d", (int)sp[1], (void *)sp[2], (int)sp[3]);
-		strcpy(errstr, "not implemented");
-		ret = -1;
-		break;
-	case PREAD:
-		if (debug)
-			fprintf(stderr, "pread %d %p %d %lld", (int)sp[1], (void *)sp[2], (int)sp[3], sp[4]);
-		ret = sp[4] == -1
-			? read((int)sp[1], (void *)sp[2], (int)sp[3])
-			: pread((int)sp[1], (void *)sp[2], (int)sp[3], sp[4]);
-		if (ret < 0)
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		break;
-	case PWRITE:
-		if (debug)
-			fprintf(stderr, "pwrite %d %p %d %lld", (int)sp[1], (void *)sp[2], (int)sp[3], sp[4]);
-		ret = sp[4] == -1
-			? write((int)sp[1], (void *)sp[2], (int)sp[3])
-			: pwrite((int)sp[1], (void *)sp[2], (int)sp[3], sp[4]);
-		if (ret < 0)
-			truncstrcpy(errstr, strerror(errno), sizeof errstr);
-		break;
+	case EXITS:  ret = sysexits((char *)sp[1]); break;
+	case CLOSE:  ret = sysclose((int)sp[1]); break;
+	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[1]); break;
+	case PIPE:   ret = syspipe((int *)sp[1]); break;
+	case CREATE: ret = syscreate((char *)sp[1], (int)sp[1], (int)sp[2]); break;
+	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
+	case ERRSTR: ret = syserrstr((char *)sp[1], (unsigned)sp[2]); break;
+	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
+	case FWSTAT: ret = sysfwstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
+	case PREAD:  ret = syspread((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
+	case PWRITE: ret = syspwrite((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
 	default:
 		if (debug)
 			fprintf(stderr, "unknown syscall %d", sc);
