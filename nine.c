@@ -255,7 +255,7 @@ main(int argc, char *argv[])
 	int fd;
 	char *name;
 	unsigned char hdr[40];
-	ssize_t n;
+	ssize_t ret;
 	unsigned long magic, textsize, bsssize;
 	uintptr_t entry, textaddr, dataaddr;
 	void *text;
@@ -277,12 +277,12 @@ main(int argc, char *argv[])
 		fprintf(stderr, "open %s: %s\n", name, strerror(errno));
 		return 1;
 	}
-	n = read(fd, hdr, sizeof hdr);
-	if (n < 0) {
+	ret = read(fd, hdr, sizeof hdr);
+	if (ret < 0) {
 		fprintf(stderr, "read %s: %s\n", name, strerror(errno));
 		return 1;
 	}
-	if (n < sizeof hdr) {
+	if (ret < sizeof hdr) {
 		fprintf(stderr, "read %s: short read\n", name);
 		return 1;
 	}
