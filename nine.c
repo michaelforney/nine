@@ -241,7 +241,7 @@ start_c(uintptr_t entry, int argc, char *argv[])
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: nine cmd [args...]\n");
+	fprintf(stderr, "usage: nine [-d] cmd [args...]\n");
 	exit(1);
 }
 
