@@ -485,7 +485,7 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	greg[REG_RAX] = ret;
 }
 
-int
+static int
 findlibc(struct dl_phdr_info *info, size_t size, void *ptr)
 {
 	const Elf64_Phdr *p;
@@ -607,7 +607,7 @@ main(int argc, char *argv[])
 	munmap(exec, textsize + datasize);
 	datasize += bsssize;
 
-	if (!dl_iterate_phdr(findlibc, NULL)) {
+	if (dl_iterate_phdr(findlibc, NULL) != 1) {
 		fprintf(stderr, "could not find libc text segment\n");
 		return 1;
 	}
