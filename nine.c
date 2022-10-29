@@ -197,11 +197,11 @@ syschdir(char *name)
 }
 
 static int
-sysdup(int fd)
+sysdup(int old, int new)
 {
 	if (debug)
-		fprintf(stderr, "dup %d", fd);
-	return seterr(dup(fd));
+		fprintf(stderr, "dup %d %d", old, new);
+	return seterr(dup2(old, new));
 }
 
 static int
@@ -456,7 +456,7 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case CHDIR:  ret = syschdir((char *)sp[1]); break;
 	case EXITS:  ret = sysexits((char *)sp[1]); break;
 	case CLOSE:  ret = sysclose((int)sp[1]); break;
-	case DUP:    ret = sysdup((int)sp[1]); break;
+	case DUP:    ret = sysdup((int)sp[1], (int)sp[2]); break;
 	case EXEC:   ret = sysexec((char *)sp[1], (char **)sp[2]); break;
 	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
 	case SLEEP:  ret = syssleep((int)sp[1]); break;
