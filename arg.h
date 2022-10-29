@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Unlicense */
 #define ARGBEGIN \
 	for (;;) { \
 		if (argc > 0) \

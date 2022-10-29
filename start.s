@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Unlicense */
 .text
 .globl start
 start:

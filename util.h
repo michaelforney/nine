@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Unlicense */
 static inline uint_least32_t
 getbe32(void *p)
 {

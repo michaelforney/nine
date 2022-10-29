@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Unlicense */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <inttypes.h>
