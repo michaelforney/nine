@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <elf.h>
 #include <link.h>
@@ -378,6 +379,39 @@ sysfwstat(int fd, unsigned char *edir, unsigned nedir)
 	return -1;
 }
 
+static int
+sysawait(char *s, unsigned n)
+{
+	int status;
+	pid_t pid;
+	char msg[32];
+	unsigned long time[3];
+
+	if (debug)
+		fprintf(stderr, "await %p %u", (void *)s, n);
+#ifdef HAVE_WAIT3
+	struct rusage ru;
+	pid = wait3(&status, 0, &ru);
+	time[0] = ru.ru_utime.tv_sec * 1000 + ru.ru_utime.tv_usec / 1000;
+	time[1] = ru.ru_stime.tv_sec * 1000 + ru.ru_stime.tv_usec / 1000;
+	time[2] = time[0] + time[1];
+#else
+	pid = wait(&status);
+	time[0] = 0;
+	time[1] = 0;
+	time[2] = 0;
+#endif
+	if (pid < 0)
+		return seterr(-1);
+	if (WIFEXITED(status))
+		snprintf(msg, sizeof msg, "%d", WEXITSTATUS(status));
+	else if (WIFSIGNALED(status))
+		snprintf(msg, sizeof msg, "signal %d", WTERMSIG(status));
+	else
+		strcpy(msg, "exited");
+	return snprintf(s, n, "%jd %lu %lu %lu '%s'", (intmax_t)pid, time[0], time[1], time[2], msg);
+}
+
 static long long
 syspread(int fd, void *buf, int len, long long off)
 {
@@ -427,6 +461,7 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case FSTAT:  ret = sysfstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case FWSTAT: ret = sysfwstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
+	case AWAIT:  ret = sysawait((char *)sp[1], (unsigned)sp[2]); break;
 	case PREAD:  ret = syspread((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
 	case PWRITE: ret = syspwrite((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
 	default:
