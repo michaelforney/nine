@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -35,6 +36,20 @@
 #define QTAUTH		0x08		/* type bit for authentication file */
 #define QTTMP		0x04		/* type bit for not-backed-up file */
 #define QTFILE		0x00		/* plain file */
+
+/* rfork */
+#define RFNAMEG		0x0001
+#define RFENVG		0x0002
+#define RFFDG		0x0004
+#define RFNOTEG		0x0008
+#define RFPROC		0x0010
+#define RFMEM		0x0020
+#define RFNOWAIT	0x0040
+#define RFCNAMEG	0x0400
+#define RFCENVG		0x0800
+#define RFCFDG		0x1000
+#define RFREND		0x2000
+#define RFNOMNT		0x4000
 
 #define STATFIXLEN	65
 
@@ -265,6 +280,45 @@ syssleep(int msec)
 	return seterr(nanosleep(&ts, NULL));
 }
 
+static int findlibc(struct dl_phdr_info *, size_t, void *);
+
+static int
+sysrfork(int rf)
+{
+	int flags;
+	int ret;
+	pid_t pid;
+
+	if (debug)
+		fprintf(stderr, "rfork %#x", rf);
+	flags = 0;
+	rf &= ~RFREND;
+	if (rf & RFPROC) {
+		if ((rf & ~RFPROC) != RFFDG)
+			goto noimpl;
+		pid = fork();
+		if (pid == -1)
+			return seterr(-1);
+		if (pid == 0 && dl_iterate_phdr(findlibc, NULL) != 1)
+			exit(1);
+		return seterr(pid);
+	} else {
+		if (rf & ~(RFFDG | RFNAMEG))
+			goto noimpl;
+		if (rf & RFFDG)
+			flags |= CLONE_FILES;
+		if (rf & RFNAMEG)
+			flags |= CLONE_NEWNS;
+		ret = seterr(unshare(flags));
+	}
+
+	return ret;
+
+noimpl:
+	strcpy(errstr, "not implemented");
+	return -1;
+}
+
 static int
 syscreate(char *name, int mode, int perm)
 {
@@ -460,6 +514,7 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case EXEC:   ret = sysexec((char *)sp[1], (char **)sp[2]); break;
 	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
 	case SLEEP:  ret = syssleep((int)sp[1]); break;
+	case RFORK:  ret = sysrfork((int)sp[1]); break;
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
 	case CREATE: ret = syscreate((char *)sp[1], (int)sp[2], (int)sp[3]); break;
 	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
