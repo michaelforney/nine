@@ -36,7 +36,7 @@
 #define QTTMP		0x04		/* type bit for not-backed-up file */
 #define QTFILE		0x00		/* plain file */
 
-#define STATFIXLEN
+#define STATFIXLEN	65
 
 #define ALIGN(v, a) (((v) + (a) - 1) & ~((a) - 1))
 #define ERRMAX 128
