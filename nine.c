@@ -507,27 +507,46 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	sp = (long long *)greg[REG_RSP];
 	switch (sc) {
 	case _ERRSTR: ret = syserrstr((char *)sp[1], 64); break;
+	/* BIND */
 	case CHDIR:  ret = syschdir((char *)sp[1]); break;
-	case EXITS:  ret = sysexits((char *)sp[1]); break;
 	case CLOSE:  ret = sysclose((int)sp[1]); break;
 	case DUP:    ret = sysdup((int)sp[1], (int)sp[2]); break;
+	/* ALARM */
 	case EXEC:   ret = sysexec((char *)sp[1], (char **)sp[2]); break;
+	case EXITS:  ret = sysexits((char *)sp[1]); break;
+	/* FAUTH */
+	/* SEGBRK */
 	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
+	/* OSEEK */
 	case SLEEP:  ret = syssleep((int)sp[1]); break;
 	case RFORK:  ret = sysrfork((int)sp[1]); break;
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
 	case CREATE: ret = syscreate((char *)sp[1], (int)sp[2], (int)sp[3]); break;
+	/* FD2PATH */
 	case BRK_:   ret = sysbrk_((char *)sp[1]); break;
 	case REMOVE: ret = sysremove((char *)sp[1]); break;
+	/* NOTIFY */
+	/* NOTED */
+	/* SEGATTACH */
+	/* SEGDETACH */
+	/* SEGFREE */
+	/* SEGFLUSH */
+	/* RENDEZVOUS */
+	/* UNMOUNT */
+	/* SEMACQUIRE */
+	/* SEMRELEASE */
 	case SEEK:   ret = sysseek((long long *)sp[1], (int)sp[2], sp[3], (int)sp[4]); break;
+	/* FVERSION */
 	case ERRSTR: ret = syserrstr((char *)sp[1], (unsigned)sp[2]); break;
 	case STAT:   ret = sysstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case FSTAT:  ret = sysfstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case WSTAT:  ret = syswstat((char *)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
 	case FWSTAT: ret = sysfwstat((int)sp[1], (unsigned char *)sp[2], (unsigned)sp[3]); break;
+	/* MOUNT */
 	case AWAIT:  ret = sysawait((char *)sp[1], (unsigned)sp[2]); break;
 	case PREAD:  ret = syspread((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
 	case PWRITE: ret = syspwrite((int)sp[1], (void *)sp[2], (int)sp[3], (long long)sp[4]); break;
+	/* TSEMACQUIRE */
 	default:
 		if (debug)
 			fprintf(stderr, "unknown syscall %d", sc);
