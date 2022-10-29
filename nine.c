@@ -205,6 +205,14 @@ sysdup(int fd)
 }
 
 static int
+sysexec(char *name, char *argv[])
+{
+	if (debug)
+		fprintf(stderr, "exec %s", name);
+	return seterr(execv(name, argv));
+}
+
+static int
 sysclose(int fd)
 {
 	if (debug)
@@ -449,6 +457,7 @@ sigsys(int sig, siginfo_t *info, void *ptr)
 	case EXITS:  ret = sysexits((char *)sp[1]); break;
 	case CLOSE:  ret = sysclose((int)sp[1]); break;
 	case DUP:    ret = sysdup((int)sp[1]); break;
+	case EXEC:   ret = sysexec((char *)sp[1], (char **)sp[2]); break;
 	case OPEN:   ret = sysopen((char *)sp[1], (int)sp[2]); break;
 	case SLEEP:  ret = syssleep((int)sp[1]); break;
 	case PIPE:   ret = syspipe((int *)sp[1]); break;
